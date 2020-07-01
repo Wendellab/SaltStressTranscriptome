@@ -14,6 +14,7 @@ D13.snp4.4: SNP index for _G. mustelinum_
 salt.counts.gz: count file output by subread     
 salt.counts.summary.gz: summary file output by subread
 
-*.list files: lists of reads categorized as diploid, _G. hirsutum_, _G. barbadense_, or _G. mustelinum_
+.list files: lists of reads categorized as diploid, _G. hirsutum_, _G. barbadense_, or _G. mustelinum_     
+files are available from PRJNA601953
 
 D5.primaryOnly.gtf: GTF file of annotations derived from https://www.cottongen.org/species/Gossypium_raimondii/jgi_genome_221. Only primary transcripts are considered.
