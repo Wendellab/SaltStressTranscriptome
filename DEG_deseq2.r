@@ -136,7 +136,6 @@ resultsNames(ddstotal)
 #[7] "speciesAD4.conditionSalt"  "speciesD5.conditionSalt"   "speciesPS7.conditionSalt" 
 #[10] "speciesTM1.conditionSalt"
 
-setwd("D://inISU/SaltRNA/MidDEGs")
 ###the treatment effect for each genotype
 #The condition effect for A2 (the main effect for reference genotype)
 results.resA2 = results(ddstotal, contrast=c("condition","Salt","Control"))
