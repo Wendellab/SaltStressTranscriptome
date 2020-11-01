@@ -1,7 +1,6 @@
 ######################
 ##Load the packages###
 ######################
-setwd("D://inISU/SaltRNA/WGCNA_results/")
 library(WGCNA)
 library(RColorBrewer)
 library(flashClust)
@@ -94,7 +93,7 @@ saltdat = as.data.frame(t(counttable));
 write.table(t(saltdat),file="W-saltcount.raw.txt", sep="\t")
 
 pdf("W-raw.boxplot.pdf")
-boxplot(log2(t(saltdat) ), las=2)
+boxplot(log2(t(saltdat)), las=2)
 dev.off()
 
 # Normalization using DESeq2 rlog
@@ -111,7 +110,7 @@ names(expr)<-names(counttable)
 expr<-expr[,-which(names(expr) %in% "D5_CK2")] #D5_20 is a sample from polyploid, remove it
 write.table(expr,"W-count.rlog.txt", sep="\t")
 
-###Read in the physiological traits data
+###Read in the physiological and phenotypic traits data
 traitData<-read.table("saltTraits.txt", header=TRUE, sep="\t")
 rownames(traitData) = traitData[, 1]
 datTraits <- traitData[,-1] #for condition, 0 represents control,and 1 reps salt stress
@@ -169,7 +168,6 @@ if (!gsg$allOK)
   # Remove the offending genes and samples from the data:
   datExprT = datExprT[gsg$goodSamples, gsg$goodGenes]
 }
-
 save(datExprT, datTraits, file = "R-01-dataInput.RData")
 
 ########################
@@ -270,16 +268,17 @@ MEs_col = MEs
 colnames(MEs_col) = paste0("ME", labels2colors(
   as.numeric(str_replace_all(colnames(MEs),"ME",""))))
 MEs_col = orderMEs(MEs_col)
+
 #######################################
 ###General network topology analysis###
 #######################################
 load("R-01-dataInput.RData")
 load("R-02-buildNetwork24.RData")
 net = saltnet24
+
 # Displaying module heatmap and the eigengene
 samples <- c(rep("A2_CK",3),rep("A2_Salt",3),rep("D5_CK",2),rep("D5_Salt",3),rep("TM1_CK",3),rep("TM1_Salt",3),rep("PS7_CK",3),rep("PS7_Salt",3),rep("AD4_CK",3),rep("AD4_Salt",3))
 ss <- as.factor(samples)
-
 Nmodules = dim(net$MEs)[2]
 MEs<-net$MEs
 
@@ -333,19 +332,18 @@ dev.off()
 ##########################################################
 ###Relate modules to phenotype and functional gene sets###
 ##########################################################
-
-#load("R-02-buildNetwork.RData")
+load("R-02-buildNetwork.RData")
 # eigengene~sample, anova
-pval<-apply(MEs,2,function(x){round(anova(aov(x~ss) )$"Pr(>F)"[1],4)})
-pval<-as.data.frame(pval)
-pval$symbol<-ifelse(pval$pval<0.05,"*"," ")
-pval$numeric<-as.numeric(substring(rownames(pval),3) )
-pval<-pval[order(pval$numeric),]
-pval$symbol[1]<-" "  # ME0 always meaningless
-pval
-
+# pval<-apply(MEs,2,function(x){round(anova(aov(x~ss) )$"Pr(>F)"[1],4)})
+# pval<-as.data.frame(pval)
+# pval$symbol<-ifelse(pval$pval<0.05,"*"," ")
+# pval$numeric<-as.numeric(substring(rownames(pval),3) )
+# pval<-pval[order(pval$numeric),]
+# pval$symbol[1]<-" "  # ME0 always meaningless
+# pval
+########################################
 ## or run linear model to test for population, treatment, and interaction effects for module expression for each module
-#borrowed from Mead et al., 2019 Mol. Eol.,  https://github.com/alaynamead/valley_oak_water_stress
+# borrowed from Mead et al., 2019 Mol. Eol.,  https://github.com/alaynamead/valley_oak_water_stress
 species <- c(rep("A2",6),rep("D5",6),rep("TM1",6),rep("PS7",6),rep("AD4",6))
 condition <- rep(c(rep("Control",3),rep("Salt",3)),5)
 rep <- rep(1:3,10)
@@ -445,45 +443,6 @@ mod.c <- mod.c[which(mod.c != 'grey')]
 length(unique(c(mod.s, mod.i, mod.c)))
 mods <- unique(c(mod.s, mod.i, mod.c))
 
-## plot heatmap of average expression differences between control/treatment for each population
-# data
-col29$interaction <- interaction(col29$condition, col29$species)
-# make df with avg module expression by site and treatment
-me.avg <- as.data.frame(matrix(nrow = ncol(net$MEs), ncol = 10))
-colnames(me.avg) <- levels(col29$interaction)
-rownames(me.avg) <- colnames(net$MEs)
-for(mod in 1:ncol(net$MEs)){
-  
-  for(group in 1:length(levels(col29$interaction))){
-    g <- levels(col29$interaction)[group]
-    me.avg[mod, group] <- mean(net$MEs[which(col29$interaction == g), mod])
-  }
-}
-# use only treatment and interaction modules
-me.avg <- me.avg[unique(c(mod.i, mod.c)),]
-# looking at treatment differences
-colnames(me.avg)
-me.avg.diff <- me.avg[,c(2,4,6,8,10)] - me.avg[,c(1,3,5,7,9)]
-colnames(me.avg.diff) <- gsub('Salt.', '', colnames(me.avg.diff))
-cols <- colorRamp2(breaks = as.vector(quantile(unlist(me.avg.diff))), colors = c('darkslateblue', 'lightcyan2', 'white', 'mistyrose','firebrick3'))
-# to include functions
-#rownames(me.avg.diff) <- c("blue\n(chloroplast)\nPxT *", "darkgreen\n(ribosome)\nT***, PxT**", "greenyellow\n(DNA replication)\nPxT*", "midnightblue\n¨D\nPxT*", "pink\n(kinase activity)\nT**, PxT*", "yellow\n(oxidoreductase activity)\nP*, PxT*", "black\n(response to stress)\nT***", "brown\n¨D\nT*", "grey60\n(protein folding)\nP*, T***")
-# to add population colors
-cols.top <- as.list(c("#FDD692","#67D5B5","#EE7785","#C89EC4", "#000262"))
-names(cols.top) <- colnames(me.avg.diff)
-top <- HeatmapAnnotation(Population = colnames(me.avg.diff), col = list(Population = c('MC' =  '#ffe55c', 'FT' = '#ff8b4e', 'FH' = '#e14d66', 'CV' = '#9c2e7f', 'PL' = '#5f0092', 'RD' = '#000262')), annotation_legend_param = list(title='\nPopulation'))
-#png(file = 'plots/module_expression_avg_change_heatmap_with_functions.png', res = 300, height = 5.5, width = 7.5, units = 'in')
-Heatmap(me.avg.diff,
-        cluster_columns = T,
-        cluster_rows = T,
-        col = cols,
-        row_names_side = 'left',
-        #column_names_side = 'top',
-        heatmap_legend_param = list(title = 'Average\nExpression\nDifference'),
-        #top_annotation = top,
-        column_title_gp = gpar(fontsize = 14))
-#dev.off()
-
 
 ###Eigengene adjacency heatmap
 pdf("s6.Eigengene_adjacency_heatmap_1.pdf",width = 12,height = 12)
@@ -530,12 +489,6 @@ pdf("s7.ModuleTraitAssociation.pdf", width=16, height=16)
 labeledHeatmap(Matrix = moduleTraitCor, xLabels = colnames(moduleTraitCor), yLabels = MEcolors, ySymbols = names(MEs), colorLabels = TRUE, colors = blueWhiteRed(50), textMatrix = as.matrix(textMatrix), setStdMargins = FALSE, cex.text = 0.5,zlim = c(-1,1), main = paste("Module-trait relationships"))
 dev.off()
 
-# plot it for only significant modules
-where.sig<-sort(match(module.sig, rownames(moduleTraitCor)) )
-moduleTraitCor.sig <- moduleTraitCor[where.sig,]
-textMatrix.sig <- textMatrix[where.sig,]
-labeledHeatmap(Matrix = moduleTraitCor.sig, xLabels = colnames(moduleTraitCor), yLabels = MEcolors[where.sig], ySymbols = rownames(moduleTraitCor.sig), colorLabels = TRUE, colors = blueWhiteRed(50), textMatrix = as.matrix(textMatrix.sig), setStdMargins = FALSE, cex.text = 0.7,zlim = c(-1,1), main = paste("Module-trait relationships: sig only"))
-
 # For each module, we also define a quantitative measure of module membership MM as the correlation of the module eigengene and the gene expression profile. This allows us to quantify the similarity of all genes on the array to every module.
 # calculate the module membership values
 # (aka. module eigengene based connectivity kME):
@@ -561,7 +514,6 @@ for (module in sigModule) {
 }
 dev.off()
 
-
 #######################
 ###make the TOM plot###
 #######################
@@ -570,7 +522,7 @@ TOM <- as.matrix(TOM)
 dissTOM = 1-TOM
 # Transform dissTOM with a power to make moderately strong 
 # connections more visible in the heatmap
-plotTOM = dissTOM^16
+plotTOM = dissTOM^24
 # Set diagonal to NA for a nicer plot
 diag(plotTOM) = NA
 # Call the plot function
@@ -578,7 +530,6 @@ pdf("s9.TOM_plot.pdf")
 TOMplot(plotTOM, net$dendrograms, moduleColors, 
         main = "Network heatmap plot, all genes")  
 dev.off()
-
 
 ##########################
 ### Modules Annotation ###
@@ -596,7 +547,6 @@ me$gene <- rownames(me)
 rownames(me) <- NULL
 dim(me<-merge(me, aa, all.x=TRUE, by="gene"))
 write.table(me, file="s5.module&annotation.txt", row.names=FALSE,sep="\t")
-
 
 ######## Functional enrichment analysis
 # add Gorai id to module group
@@ -616,7 +566,6 @@ names(MM)[1]<-"gene"
 dim(me0<-merge(me0,MM,by="gene",all.x=TRUE, all.y=TRUE) )
 # me0[me0$kME9>0.9 & me0$ME==9, c("gene","tair10.defline")]
 write.table(me0,file="s5.moduleMembership&annotation.txt",sep="\t",row.names=FALSE)
-
 
 #######Annotation with topGO
 library(topGO)
@@ -668,4 +617,4 @@ for(module in 0:(Nmodules-1))
     GOresults<-rbind(GOresults,enrichME)   }
 }
 write.table(GOresults, file="s8.GOresults.txt", sep="\t", row.names=FALSE)
-####################################
+#####################################################################################################################
