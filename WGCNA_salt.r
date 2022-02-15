@@ -81,19 +81,21 @@ summarySE <- function(data=NULL, measurevar, groupvars=NULL, na.rm=FALSE,
   return(datac)
 }
 
+
 ################################
 ##Read in the expression data###
 ################################
 
 counttable <- read.csv("counts.total.txt",sep="")
+counttable <- counttable[,-(19:24)]
 colinfo <- read.csv("coldatatotal.txt",sep="")
 
 # Make each row corresponds to a gene and column to a sample or auxiliary information.
 saltdat = as.data.frame(t(counttable));
 write.table(t(saltdat),file="W-saltcount.raw.txt", sep="\t")
 
-pdf("W-raw.boxplot.pdf")
-boxplot(log2(t(saltdat)), las=2)
+pdf("WGCNA-Rc.boxplot.pdf")
+boxplot(log2(t(saltdat) ), las=2)
 dev.off()
 
 # Normalization using DESeq2 rlog
@@ -110,7 +112,7 @@ names(expr)<-names(counttable)
 expr<-expr[,-which(names(expr) %in% "D5_CK2")] #D5_20 is a sample from polyploid, remove it
 write.table(expr,"W-count.rlog.txt", sep="\t")
 
-###Read in the physiological and phenotypic traits data
+###Read in the physiological traits data
 traitData<-read.table("saltTraits.txt", header=TRUE, sep="\t")
 rownames(traitData) = traitData[, 1]
 datTraits <- traitData[,-1] #for condition, 0 represents control,and 1 reps salt stress
@@ -155,7 +157,7 @@ dev.off()
 # Check that all genes and samples have sufficiently low numbers of missing values.
 gsg = goodSamplesGenes(datExprT, verbose = 3);
 gsg$allOK
-# Excluding 1019 genes from the calculation due to too many missing samples or zero variance.
+# Excluding 1112 genes from the calculation due to too many missing samples or zero variance.
 
 # If the last statement returns TRUE, all genes have passed the cuts. If not, we remove the offending genes and samples from the data:
 if (!gsg$allOK)
@@ -168,6 +170,7 @@ if (!gsg$allOK)
   # Remove the offending genes and samples from the data:
   datExprT = datExprT[gsg$goodSamples, gsg$goodGenes]
 }
+
 save(datExprT, datTraits, file = "R-01-dataInput.RData")
 
 ########################
@@ -179,7 +182,7 @@ options(stringsAsFactors = FALSE)
 enableWGCNAThreads()
 lnames = load(file = "R-01-dataInput.RData")
 lnames
-nGenes<-ncol(datExprT) #36486L
+nGenes<-ncol(datExprT) #36393L
 
 # Choose a set of soft-thresholding powers
 type<-"signed"
@@ -216,7 +219,7 @@ dev.off()
 ###Network Construction####
 ###########################
 
-power = 24
+power = 26
 #cor <- WGCNA::cor #avoid the conflict between WGCNA function with the R base stat, can be reset to cor<-stats::cor after finished
 #This step is quite slow and takes a lot of memory, so I actually ran it on a server; otherwise it may split into multiple blocks but difference were found between one single block and multiple blocks
 net = blockwiseModules(datExprT, 
@@ -228,7 +231,7 @@ net = blockwiseModules(datExprT,
                        mergeCutHeight = 0.25,
                        deepSplit = 2,
                        
-                       minModuleSize = min(30, ncol(datExprT)/2 ),
+                       minModuleSize = min(100, ncol(datExprT)/2 ),
                        
                        pamStage = TRUE, pamRespectsDendro = TRUE,
                        
@@ -236,11 +239,11 @@ net = blockwiseModules(datExprT,
                        numericLabels = TRUE,verbose = 3,
                        
                        saveTOMs = TRUE,
-                       saveTOMFileBase = "Allspecies_24_power_signed_merge_0.25_TOM" 
+                       saveTOMFileBase = "Allspecies_26_power_signed_merge_0.25_TOM" 
 )
-assign("saltnet24", net)
-save("saltnet24", file = "R-02-buildNetwork24.RData")
-net=saltnet24
+assign("saltnet26", net)
+save("saltnet26", file = "R-02-buildNetwork26.RData")
+net=saltnet26
 table(net$colors)
 
 ###plot the modules and dendrogram
@@ -254,7 +257,7 @@ plotDendroAndColors(net$dendrograms[[1]], mergedColors[net$blockGenes[[1]]],
                     dendroLabels = FALSE, hang = 0.03,
                     addGuide = TRUE, guideHang = 0.05)
 dev.off()
-
+table(moduleColors)
 ##save the results
 moduleLabels = net$colors
 moduleColors = labels2colors(net$colors)
@@ -273,12 +276,12 @@ MEs_col = orderMEs(MEs_col)
 ###General network topology analysis###
 #######################################
 load("R-01-dataInput.RData")
-load("R-02-buildNetwork24.RData")
-net = saltnet24
-
+load("R-02-buildNetwork26.RData")
+net = saltnet26
 # Displaying module heatmap and the eigengene
-samples <- c(rep("A2_CK",3),rep("A2_Salt",3),rep("D5_CK",2),rep("D5_Salt",3),rep("TM1_CK",3),rep("TM1_Salt",3),rep("PS7_CK",3),rep("PS7_Salt",3),rep("AD4_CK",3),rep("AD4_Salt",3))
+samples <- c(rep("A2_Control",3),rep("A2_Salt",3),rep("D5_Control",2),rep("D5_Salt",3),rep("AD1_Control",3),rep("AD1_Salt",3),rep("AD4_Control",3),rep("AD4_Salt",3))
 ss <- as.factor(samples)
+
 Nmodules = dim(net$MEs)[2]
 MEs<-net$MEs
 
@@ -302,22 +305,26 @@ for(me in 0:(Nmodules-1)){
 }
 dev.off()
 
-pdf("s5.eigengene_expression_association_with_traits.pdf")
+##
+plots <- list()
 for(me in 0:(Nmodules-1)){
+  
   which.module=paste("ME",me,sep="")
   module.color=labels2colors(me)
   #line, anova
   df<-data.frame(ME=MEs[,which.module], ss, module = which.module )
   fit<-aov(ME~ss,df)
   dfc<-summarySE(df, measurevar="ME", groupvars=c("ss", "module"))
-  dfc$species <- factor(gsub("_CK|_Salt","",dfc$ss),levels=c("A2","D5","TM1","PS7","AD4"))
-  dfc$condition <- gsub("A2_|D5_|TM1_|PS7_|AD4_","",dfc$ss)
+  dfc$species <- factor(gsub("_Control|_Salt","",dfc$ss),levels=c("A2","D5","AD1","AD4"))
+  dfc$condition <- gsub("A2_|D5_|AD1_|AD4_","",dfc$ss)
+  pdf("s5_1.eigengene_expression_association_with_traits.pdf")
+  
   plots[[me+1]]<- ggplot(dfc, aes(x=species, y=ME, fill = condition)) +
     geom_bar(stat="identity",position=position_dodge(), color="black", size=0.3) +
-    geom_errorbar(aes(ymin=ME-se, ymax=ME+se), width=.3,position=position_dodge(0.9)) +
+    geom_errorbar(aes(ymin=ME-se, ymax=ME+se), width=.3, position=position_dodge(0.9)) +
     ggtitle(paste(which.module," ",module.color, sep="") )+
-    theme_bw() +
-    theme(plot.title=element_text( size=11),legend.position = "none")
+    theme_bw() + labs(y="eigengene expression") +
+    theme(plot.title=element_text( size=11),legend.position = "right")
   
   for(page in 1:ceiling(Nmodules/9))
   {
@@ -326,122 +333,21 @@ for(me in 0:(Nmodules-1)){
     else
     {  multiplot(plotlist = plots[(9*page-8):Nmodules],  layout=matrix(1:9, nrow=3, byrow=TRUE) )  }
   }
+  dev.off()
 }
-dev.off()
 
 ##########################################################
 ###Relate modules to phenotype and functional gene sets###
 ##########################################################
-load("R-02-buildNetwork.RData")
+#load("R-02-buildNetwork.RData")
 # eigengene~sample, anova
-# pval<-apply(MEs,2,function(x){round(anova(aov(x~ss) )$"Pr(>F)"[1],4)})
-# pval<-as.data.frame(pval)
-# pval$symbol<-ifelse(pval$pval<0.05,"*"," ")
-# pval$numeric<-as.numeric(substring(rownames(pval),3) )
-# pval<-pval[order(pval$numeric),]
-# pval$symbol[1]<-" "  # ME0 always meaningless
-# pval
-########################################
-## or run linear model to test for population, treatment, and interaction effects for module expression for each module
-# borrowed from Mead et al., 2019 Mol. Eol.,  https://github.com/alaynamead/valley_oak_water_stress
-species <- c(rep("A2",6),rep("D5",6),rep("TM1",6),rep("PS7",6),rep("AD4",6))
-condition <- rep(c(rep("Control",3),rep("Salt",3)),5)
-rep <- rep(1:3,10)
-coltotal <- data.frame(row.names=names(datExprT),species,condition,rep)
-col29 <- coltotal[-8,]
-row.names(col29) <- row.names(net$MEs)
-col29$sample <- row.names(net$MEs)
-
-net$MEs <- net$MEs[,order(colnames(net$MEs))]
-head(net$MEs)
-lm.results <- list()
-for(m in 1:ncol(net$MEs)){
-  lm.results[[m]] <- list(anova(lm(net$MEs[,m] ~ col29$species*col29$condition)))
-}
-names(lm.results) <- colnames(MEs)
-save(lm.results, file = 'R-00-lm_results_module_expression_sitextreatment_power24.Rdata')
-
-# make GxE plots with average expression level for each site
-col29$species <- factor(col29$species, levels = c('A2', 'D5', 'TM1', 'PS7', 'AD4'))
-col29$species
-# species colors
-cols <- c("#FDD692","#67D5B5","#EE7785","#C89EC4", "#000262")
-# function for GxE plots
-gxe_plot <- function(expr.df, mod, species = c('A2', 'D5', 'TM1', 'PS7', 'AD4'), cols=c("#FDD692","#67D5B5","#EE7785","#C89EC4", "#000262"), main = mod, legendsize = 0.8, legend = T, lty = rep(1,6), lwd = 6, ...){
-  ex <- expr.df[,mod]
-  names(ex) <- rownames(expr.df)
-  ex.species <- as.data.frame(matrix(nrow = 5, ncol = 6))
-  rownames(ex.species) <- species
-  colnames(ex.species) <- c('mean.c', 'mean.d', 'median.c', 'median.d', 'sd.c', 'sd.d')
-  
-  for(n in 1:length(species)){
-    # get list of control samples for each species
-    samples.c <- col29$sample[col29$species == species[n] & col29$condition == 'Control']
-    ex.species[n,1] <- mean(as.numeric(ex[as.character(samples.c)]))
-    ex.species[n,3] <- median(as.numeric(ex[as.character(samples.c)]))
-    ex.species[n,5] <- sd(as.numeric(ex[as.character(samples.c)]))
-    
-    # get list of salt samples for each species
-    samples.s <- col29$sample[col29$species == species[n] & col29$condition == 'Salt'] 
-    ex.species[n,2] <- mean(as.numeric(ex[as.character(samples.s)]))
-    ex.species[n,4] <- median(as.numeric(ex[as.character(samples.s)]))
-    ex.species[n,6] <- sd(as.numeric(ex[as.character(samples.s)]))
-  }
-  
-  min = min(c(ex.species$mean.c, ex.species$mean.d) - 0.05*abs(max(c(ex.species$mean.c, ex.species$mean.d) - min(c(ex.species$mean.c, ex.species$mean.d)))))
-  max = max(c(ex.species$mean.c, ex.species$mean.d) + 0.05*abs(max(c(ex.species$mean.c, ex.species$mean.d) - min(c(ex.species$mean.c, ex.species$mean.d)))))
-  
-  plot(c(ex.species$mean.c[1], ex.species$mean.d[1]), type = 'l', ylim = c(min,max), col = cols[1], xlab = '', ylab = 'Module Expression', main = main, xaxt="n", lty = 1, lwd = lwd, ...)
-  axis(1, labels = c('Control', 'Salt'), at = c(1,2))
-  lines(c(ex.species$mean.c[2], ex.species$mean.d[2]), col = cols[2], lwd = lwd, lty = 2)
-  lines(c(ex.species$mean.c[3], ex.species$mean.d[3]), col = cols[3], lwd = lwd, lty = 3)
-  lines(c(ex.species$mean.c[4], ex.species$mean.d[4]), col = cols[4], lwd = lwd, lty = 4)
-  lines(c(ex.species$mean.c[5], ex.species$mean.d[5]), col = cols[5], lwd = lwd, lty = 5)
-  if(legend == T){
-    legend(x = 'top', fill = cols, legend = species, horiz = T, cex = legendsize)
-  }
-}
-par(mfrow = c(1,1), mar = c(5,4,4,1)+0.1, las = 1)
-###
-plot.window.orig <- plot.window
-# plot single module:
-gxe_plot(expr.df = net$MEs, mod = 'ME1', species = levels(col29$species), lty = c(1:6),  main = 'ME1\n(description)')
-#plot GxE plots for all modules
-for(n in 1:ncol(net$MEs)){
-  mod <- colnames(net$MEs)[n]
-  png(filename = paste('module_GxE_', mod, '.png', sep = ''), res = 300, width = 7, height = 6, units = 'in')
-  par(mfrow = c(1,1), mar = c(5,4,4,1)+0.1, las = 1)
-  gxe_plot(expr.df = net$MEs, mod = mod, species = levels(col29$species))
-  dev.off()
-}
-
-## get list of modules with significant species, condition, and interaction effects
-mod.s <- vector()
-mod.c <- vector()
-mod.i <- vector()
-for(n in 1:length(lm.results)){
-  
-  # species
-  if(lm.results[[n]][[1]][1,5] <= 0.05){
-    mod.s <- append(mod.s, names(lm.results)[n])
-  }
-  # condition
-  if(lm.results[[n]][[1]][2,5] <= 0.05){
-    mod.c <- append(mod.c, names(lm.results)[n])
-  }
-  # interaction
-  if(lm.results[[n]][[1]][3,5] <= 0.05){
-    mod.i <- append(mod.i, names(lm.results)[n])
-  }
-}
-mod.s 
-mod.c 
-mod.i  
-# remove grey, not a real module
-mod.c <- mod.c[which(mod.c != 'grey')]
-# plot all significant modules
-length(unique(c(mod.s, mod.i, mod.c)))
-mods <- unique(c(mod.s, mod.i, mod.c))
+pval<-apply(MEs,2,function(x){round(anova(aov(x~ss) )$"Pr(>F)"[1],4)})
+pval<-as.data.frame(pval)
+pval$symbol<-ifelse(pval$pval<0.05,"*"," ")
+pval$numeric<-as.numeric(substring(rownames(pval),3) )
+pval<-pval[order(pval$numeric),]
+pval$symbol[1]<-" "  # ME0 always meaningless
+pval
 
 
 ###Eigengene adjacency heatmap
@@ -456,11 +362,10 @@ dev.off()
 
 ## add the species info to traits data
 datTraits_spe <- datTraits
-datTraits_spe$species_A2 <- c(rep(1,6),rep(0,23))
-datTraits_spe$species_D5 <- c(rep(0,6),rep(1,5),rep(0,18))
-datTraits_spe$species_TM1 <- c(rep(0,11),rep(1,6),rep(0,12))
-datTraits_spe$species_PS7 <- c(rep(0,17),rep(1,6),rep(0,6))
-datTraits_spe$species_AD4 <- c(rep(0,23),rep(1,6))
+datTraits_spe$species_A2 <- c(rep(1,6),rep(0,17))
+datTraits_spe$species_D5 <- c(rep(0,6),rep(1,5),rep(0,12))
+datTraits_spe$species_AD1 <- c(rep(0,11),rep(1,6),rep(0,6))
+datTraits_spe$species_AD4 <- c(rep(0,17),rep(1,6))
 
 ### Relate eigengenes to external traits or sample conditions
 MET=orderMEs(cbind(MEs,datTraits_spe))
@@ -489,6 +394,61 @@ pdf("s7.ModuleTraitAssociation.pdf", width=16, height=16)
 labeledHeatmap(Matrix = moduleTraitCor, xLabels = colnames(moduleTraitCor), yLabels = MEcolors, ySymbols = names(MEs), colorLabels = TRUE, colors = blueWhiteRed(50), textMatrix = as.matrix(textMatrix), setStdMargins = FALSE, cex.text = 0.5,zlim = c(-1,1), main = paste("Module-trait relationships"))
 dev.off()
 
+################### do condition and species only
+dat_species <- datTraits_spe[,(30:34)]
+### Relate eigengenes to external traits or sample conditions
+MET=orderMEs(cbind(MEs,dat_species))
+#Visualization of the eigengene network representing the relationships among the modules and sample traits. The top panel shows a hierarchical clustering dendrogram of the eigengenes based on the dissimilarity diss(q_1,q_2)=1-cor(E^{(q_1)},E^{(q_2)}). The bottom panel shows the shows the eigengene adjacency A_{q1,q2}=0.5+0.5 cor(E^{(q_1)},E^{(q_2)}).
+plotEigengeneNetworks(MET,"",marDendro=c(0,4,1,2), marHeatmap=c(3,4,1,2),cex.lab=0.8,xLabelsAngle=90)
+# plot eigengene network for only the significant modules
+module.sig<-rownames(pval[pval$symbol=="*",])
+MET.sig<-MET[,module.sig]
+plotEigengeneNetworks(MET.sig,"",marDendro=c(0,4,1,2), marHeatmap=c(3,4,1,2),cex.lab=0.8,xLabelsAngle=90)
+# plot it again with color names
+names(MET.sig)<-paste("ME",labels2colors(as.numeric(substring(names(MET.sig),3) ) ),sep="")
+plotEigengeneNetworks(MET.sig,"",marDendro=c(0,4,1,2), marHeatmap=c(3,4,1,2),cex.lab=0.8,xLabelsAngle=90)
+
+### graphical representation for correlation with modules
+#get correlation and p-vals
+moduleTraitCor = cor(MEs, dat_species, use = "p");
+moduleTraitPvalue = corPvalueStudent(moduleTraitCor, nSamples=nrow(dat_species));
+MEcolors<-paste("ME",labels2colors(as.numeric(gsub("ME","",names(MEs)) ) ), sep="")
+# Will display correlations and their p-values
+textMatrix = paste(signif(moduleTraitCor, 2), " (", signif(moduleTraitPvalue, 1), ")", sep = "")
+dim(textMatrix) = dim(moduleTraitCor)
+par(mfrow=c(1,1), mar = c(6, 8.5, 3, 3))
+# Display the correlation values within a heatmap plot
+# Table of module-trait correlations and p-values. Each cell reports the correlation (and p-value) resulting from  correlating module eigengenes (rows) to traits (columns). The table is color-coded by correlation according to the color legend.
+pdf("s7_new.ModuleTraitAssociation.pdf", width=8, height=10)
+labeledHeatmap(Matrix = moduleTraitCor, xLabels = colnames(moduleTraitCor), yLabels = MEcolors, ySymbols = names(MEs), colorLabels = TRUE, colors = blueWhiteRed(50), textMatrix = as.matrix(textMatrix_tmp), setStdMargins = FALSE, cex.text = 1,zlim = c(-1,1))
+dev.off()
+
+makeStars <- function(x){
+  stars <- c("****", "***", "**", "*", "ns")
+  vec <- c(0, 0.0001, 0.001, 0.01, 0.05, 1)
+  i <- findInterval(x, vec)
+  stars[i]
+}
+attributes(moduleTraitPvalue)
+class(moduleTraitPvalue)
+data <- moduleTraitPvalue
+data1 <- matrix(makeStars(data),ncol=5,nrow=37)
+
+options(scipen = 999)
+rownames(data1)<-rownames(moduleTraitPvalue)
+colnames(data1)<-colnames(moduleTraitPvalue)
+data2 <- gsub("ns","",data1)
+textMatrix_tmp = matrix(paste(signif(moduleTraitCor, 2),  data2, sep = ""),ncol=5,nrow=37)
+
+####################################################
+
+
+# plot it for only significant modules
+where.sig<-sort(match(module.sig, rownames(moduleTraitCor)) )
+moduleTraitCor.sig <- moduleTraitCor[where.sig,]
+textMatrix.sig <- textMatrix[where.sig,]
+labeledHeatmap(Matrix = moduleTraitCor.sig, xLabels = colnames(moduleTraitCor), yLabels = MEcolors[where.sig], ySymbols = rownames(moduleTraitCor.sig), colorLabels = TRUE, colors = blueWhiteRed(50), textMatrix = as.matrix(textMatrix.sig), setStdMargins = FALSE, cex.text = 0.7,zlim = c(-1,1), main = paste("Module-trait relationships: sig only"))
+
 # For each module, we also define a quantitative measure of module membership MM as the correlation of the module eigengene and the gene expression profile. This allows us to quantify the similarity of all genes on the array to every module.
 # calculate the module membership values
 # (aka. module eigengene based connectivity kME):
@@ -514,6 +474,7 @@ for (module in sigModule) {
 }
 dev.off()
 
+
 #######################
 ###make the TOM plot###
 #######################
@@ -522,7 +483,7 @@ TOM <- as.matrix(TOM)
 dissTOM = 1-TOM
 # Transform dissTOM with a power to make moderately strong 
 # connections more visible in the heatmap
-plotTOM = dissTOM^24
+plotTOM = dissTOM^26
 # Set diagonal to NA for a nicer plot
 diag(plotTOM) = NA
 # Call the plot function
@@ -531,15 +492,15 @@ TOMplot(plotTOM, net$dendrograms, moduleColors,
         main = "Network heatmap plot, all genes")  
 dev.off()
 
+
 ##########################
 ### Modules Annotation ###
 ##########################
-
 ####### write gene with corresponding module assignment and annotation
 aa<-load('D5annotation.Rdata')
 aa  
 aa<-annotation221[,c("transcript","tair10.defline", "pfam","panther","kog", "kegg.ec", "kegg.orthology", "go", "tair10", "tair10.symbol")]
-dim(aa<-aa[grep("[.]1$",aa$transcript),])  #37505
+dim(aa<-aa[grep("[.]1$",aa$transcript),])  #37505 10
 aa$gene = gsub("[.]1$","", aa$transcript)
 me <- as.data.frame(net$colors)
 names(me) <- "ME"
@@ -564,7 +525,6 @@ MM$ID<-colnames(datExprT)
 me0<-me
 names(MM)[1]<-"gene"
 dim(me0<-merge(me0,MM,by="gene",all.x=TRUE, all.y=TRUE) )
-# me0[me0$kME9>0.9 & me0$ME==9, c("gene","tair10.defline")]
 write.table(me0,file="s5.moduleMembership&annotation.txt",sep="\t",row.names=FALSE)
 
 #######Annotation with topGO
@@ -617,4 +577,4 @@ for(module in 0:(Nmodules-1))
     GOresults<-rbind(GOresults,enrichME)   }
 }
 write.table(GOresults, file="s8.GOresults.txt", sep="\t", row.names=FALSE)
-#####################################################################################################################
+##############################################
